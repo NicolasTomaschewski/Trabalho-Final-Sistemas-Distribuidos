@@ -1,0 +1,202 @@
+# =============================================================================
+# DOCKER COMPOSE - AMBIENTE B (ARQUITETURA OTIMIZADA)
+# =============================================================================
+# IDÊNTICO ao Env A em recursos e topologia, EXCETO:
+#   - otel-collector aponta para a config otimizada (tail_sampling + filter)
+#   - LOG_LEVEL=WARNING na API e Worker (reduz logs INFO no SDK)
+#   - Portas de host shifted em +10000 (8090, 8091, 9091, 3001, etc.)
+#     para permitir rodar A e B SIMULTANEAMENTE se desejado.
+#
+# Uso:
+#   docker compose -f env-B/docker-compose.yml up -d --build
+#   docker compose -f env-B/docker-compose.yml down -v
+# =============================================================================
+
+name: obs-overhead-env-b
+
+x-resource-limits: &default-limits
+  deploy:
+    resources:
+      limits:
+        cpus: '1.0'
+        memory: 512M
+
+services:
+
+  api:
+    build:
+      context: ../base-system/api
+      dockerfile: Dockerfile
+    container_name: env-b-api
+    environment:
+      - ENV_LABEL=B
+      - OTEL_SERVICE_NAME=api-env-b
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - OTEL_EXPORTER_OTLP_PROTOCOL=grpc
+      - WORKER_URL=http://worker:8081
+      - LOG_LEVEL=WARNING         # otimizado = só WARN/ERROR/CRIT
+      - PORT=8080
+    ports:
+      - "8090:8080"
+    depends_on:
+      otel-collector:
+        condition: service_started
+      worker:
+        condition: service_started
+    networks: [obs]
+    <<: *default-limits
+
+  worker:
+    build:
+      context: ../base-system/worker
+      dockerfile: Dockerfile
+    container_name: env-b-worker
+    environment:
+      - ENV_LABEL=B
+      - OTEL_SERVICE_NAME=worker-env-b
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - OTEL_EXPORTER_OTLP_PROTOCOL=grpc
+      - LOG_LEVEL=WARNING
+      - PORT=8081
+      - FAULT_ERROR_RATE=0.05     # MESMA taxa de injeção que Env A
+      - FAULT_SLOW_RATE=0.03      # importante para comparar TD
+      - SLOW_LATENCY_MS=2500
+    ports:
+      - "8091:8081"
+    depends_on:
+      otel-collector:
+        condition: service_started
+    networks: [obs]
+    <<: *default-limits
+
+  # ---- Collector com config OTIMIZADA -----------------------------------
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.103.0
+    container_name: env-b-otel-collector
+    command: ["--config=/etc/otel-collector.yaml"]
+    volumes:
+      - ./otel/otel-collector.yaml:/etc/otel-collector.yaml:ro
+    ports:
+      - "4327:4317"   # OTLP gRPC (host:8090 -> container:4317 não, +10)
+      - "4328:4318"
+      - "8898:8888"
+      - "8899:8889"
+      - "13134:13133"
+      - "55680:55679"
+    networks: [obs]
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.57
+    container_name: env-b-jaeger
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+      - SPAN_STORAGE_TYPE=memory
+      - METRICS_STORAGE_TYPE=prometheus
+    ports:
+      - "16687:16686"  # Jaeger UI
+      - "14260:14250"
+      - "14278:14268"
+    networks: [obs]
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: env-b-prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=2h'
+      - '--web.enable-lifecycle'
+    volumes:
+      - ../observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9091:9090"
+    networks: [obs]
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+
+  grafana:
+    image: grafana/grafana:11.1.0
+    container_name: env-b-grafana
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
+    volumes:
+      - ../observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "3001:3000"
+    depends_on: [prometheus]
+    networks: [obs]
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    container_name: env-b-cadvisor
+    privileged: true
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+      - /dev/disk:/dev/disk:ro
+    ports:
+      - "8089:8080"
+    networks: [obs]
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    container_name: env-b-node-exporter
+    command:
+      - '--path.rootfs=/host'
+    volumes:
+      - /:/host:ro,rslave
+    ports:
+      - "9101:9100"
+    networks: [obs]
+    deploy:
+      resources:
+        limits:
+          cpus: '0.2'
+          memory: 128M
+
+  k6:
+    image: grafana/k6:0.51.0
+    container_name: env-b-k6
+    profiles: ["loadtest"]
+    volumes:
+      - ../base-system/load-tests:/scripts:ro
+      - ../experiments/raw-data:/results
+    networks: [obs]
+    environment:
+      - K6_OUT=experimental-prometheus-rw
+      - K6_PROMETHEUS_RW_SERVER_URL=http://prometheus:9090/api/v1/write
+
+networks:
+  obs:
+    driver: bridge
+    name: obs-env-b

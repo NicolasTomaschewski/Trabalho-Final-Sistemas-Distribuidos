@@ -1,0 +1,140 @@
+# =============================================================================
+# OpenTelemetry Collector - AMBIENTE A (BASELINE TRADICIONAL)
+# =============================================================================
+# Política do Ambiente A:
+#   - 100% dos traces são exportados
+#   - 100% dos logs são exportados
+#   - Sem tail_sampling
+#   - Sem probabilistic sampling
+#   - Sem filtros de drop
+#   - Apenas batching mínimo (necessário para evitar travamento de gRPC)
+#
+# Este ambiente representa a configuração "ingênua" comum em adoções iniciais
+# de observabilidade distribuída e serve como linha de base contra a qual o
+# Ambiente B será comparado em termos de overhead (CPU, memória, rede).
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# RECEIVERS - como o Collector recebe dados
+# -----------------------------------------------------------------------------
+receivers:
+  # Receiver OTLP (gRPC + HTTP) - aceita dados da API e Worker
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+  # Receiver Prometheus - coleta as próprias métricas internas do Collector
+  # para que o overhead do Collector também seja mensurável.
+  prometheus/self:
+    config:
+      scrape_configs:
+        - job_name: 'otel-collector-self'
+          scrape_interval: 15s
+          static_configs:
+            - targets: ['localhost:8888']
+
+# -----------------------------------------------------------------------------
+# PROCESSORS - transformações aplicadas aos dados
+# -----------------------------------------------------------------------------
+processors:
+  # Batch processor: agrupa spans/métricas/logs antes de exportar.
+  # Mesmo no baseline o batching é necessário - exportar 1-a-1 em gRPC
+  # geraria sobrecarga absurda. Esta é a única "otimização" presente.
+  batch:
+    send_batch_size: 1024
+    timeout: 5s
+    send_batch_max_size: 2048
+
+  # Memory limiter: protege contra OOM caso o pipeline travar.
+  # Em ambos os ambientes, mas com limites idênticos para fairness.
+  memory_limiter:
+    check_interval: 2s
+    limit_mib: 400
+    spike_limit_mib: 100
+
+  # Resource processor: adiciona o label de ambiente em todos os sinais.
+  # Isso permite filtrar A vs B no Grafana mesmo se os serviços estiverem
+  # mal-rotulados.
+  resource:
+    attributes:
+      - key: experiment.env
+        value: "A"
+        action: upsert
+
+# -----------------------------------------------------------------------------
+# EXPORTERS - para onde os dados são enviados
+# -----------------------------------------------------------------------------
+exporters:
+  # Exportador para Jaeger via OTLP (Jaeger >=1.35 suporta OTLP nativamente)
+  otlp/jaeger:
+    endpoint: jaeger:4317
+    tls:
+      insecure: true
+
+  # Exportador Prometheus: o Collector vira um endpoint /metrics que o
+  # Prometheus scrapeia. As métricas vindas via OTLP são convertidas.
+  prometheus:
+    endpoint: 0.0.0.0:8889
+    namespace: otel
+    send_timestamps: true
+    metric_expiration: 5m
+    resource_to_telemetry_conversion:
+      enabled: true
+
+  # Logs vão para stdout do collector (capturado pelo Docker).
+  # Em produção real iria para Loki/Elasticsearch - aqui é suficiente para
+  # mensurar o VOLUME de logs.
+  debug:
+    verbosity: detailed
+    sampling_initial: 0
+    sampling_thereafter: 0
+
+# -----------------------------------------------------------------------------
+# EXTENSIONS
+# -----------------------------------------------------------------------------
+extensions:
+  # Health check do próprio collector
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+  # zpages: debug interno do collector em :55679
+  zpages:
+    endpoint: 0.0.0.0:55679
+
+# -----------------------------------------------------------------------------
+# SERVICE - pipelines (DAG de receivers -> processors -> exporters)
+# -----------------------------------------------------------------------------
+service:
+  extensions: [health_check, zpages]
+
+  # Telemetria do próprio Collector exposta em :8888/metrics
+  # Isso é ESSENCIAL para o experimento: mede CPU/memória/spans-processados
+  # do próprio sistema de observabilidade.
+  telemetry:
+    metrics:
+      level: detailed
+      address: 0.0.0.0:8888
+    logs:
+      level: info
+
+  pipelines:
+    # Traces - SEM sampling, 100% para o Jaeger
+    traces:
+      receivers:  [otlp]
+      processors: [memory_limiter, resource, batch]
+      exporters:  [otlp/jaeger]
+
+    # Métricas - 100% para Prometheus + métricas do próprio collector
+    metrics:
+      receivers:  [otlp, prometheus/self]
+      processors: [memory_limiter, resource, batch]
+      exporters:  [prometheus]
+
+    # Logs - 100% para stdout (debug exporter)
+    logs:
+      receivers:  [otlp]
+      processors: [memory_limiter, resource, batch]
+      exporters:  [debug]

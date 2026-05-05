@@ -1,0 +1,19 @@
+# =====================================================================
+# API - dependências Python
+# =====================================================================
+# Versões fixadas para reprodutibilidade do experimento.
+
+flask==3.0.3
+requests==2.32.3
+gunicorn==22.0.0
+prometheus-client==0.20.0
+
+# OpenTelemetry SDK + OTLP exporter (gRPC)
+opentelemetry-api==1.27.0
+opentelemetry-sdk==1.27.0
+opentelemetry-exporter-otlp-proto-grpc==1.27.0
+
+# Auto-instrumentação
+opentelemetry-instrumentation-flask==0.48b0
+opentelemetry-instrumentation-requests==0.48b0
+opentelemetry-instrumentation-logging==0.48b0

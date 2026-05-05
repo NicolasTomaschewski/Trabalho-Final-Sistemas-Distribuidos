@@ -1,0 +1,73 @@
+# =============================================================================
+# Prometheus - configuração de scraping
+# =============================================================================
+# Usa nomes de serviço da rede Docker - o mesmo arquivo serve A e B porque
+# os serviços têm os mesmos nomes em redes isoladas.
+#
+# Targets coletados:
+#   1) prometheus           (auto-scrape)
+#   2) api                  (Flask /metrics)
+#   3) worker               (Flask /metrics)
+#   4) otel-collector       (telemetria interna :8888)
+#   5) otel-collector-prom  (métricas exportadas via prometheus exporter :8889)
+#   6) cadvisor             (métricas de containers)
+#   7) node-exporter        (métricas de host)
+#   8) jaeger               (métricas internas do jaeger)
+# =============================================================================
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    monitor: 'observability-overhead-experiment'
+
+# Habilita receber métricas via remote_write do k6
+# (k6 envia para Prometheus durante os testes de carga)
+remote_write_configs:
+
+scrape_configs:
+
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  - job_name: 'api'
+    metrics_path: '/metrics'
+    scrape_interval: 5s
+    static_configs:
+      - targets: ['api:8080']
+
+  - job_name: 'worker'
+    metrics_path: '/metrics'
+    scrape_interval: 5s
+    static_configs:
+      - targets: ['worker:8081']
+
+  # Métricas internas do collector (CPU, mem, throughput de spans, etc.)
+  # ESTAS SÃO AS MÉTRICAS-CHAVE para medir overhead da observabilidade.
+  - job_name: 'otel-collector-internal'
+    metrics_path: '/metrics'
+    scrape_interval: 5s
+    static_configs:
+      - targets: ['otel-collector:8888']
+
+  # Métricas exportadas pelo collector (vindas das aplicações via OTLP)
+  - job_name: 'otel-collector-exported'
+    metrics_path: '/metrics'
+    scrape_interval: 15s
+    static_configs:
+      - targets: ['otel-collector:8889']
+
+  - job_name: 'cadvisor'
+    scrape_interval: 10s
+    static_configs:
+      - targets: ['cadvisor:8080']
+
+  - job_name: 'node-exporter'
+    static_configs:
+      - targets: ['node-exporter:9100']
+
+  - job_name: 'jaeger'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['jaeger:14269']

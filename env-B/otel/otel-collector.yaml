@@ -1,0 +1,199 @@
+# =============================================================================
+# OpenTelemetry Collector - AMBIENTE B (ARQUITETURA OTIMIZADA)
+# =============================================================================
+# Política do Ambiente B:
+#
+#   TRACES:
+#     - tail_sampling com políticas:
+#       (a) traces com erro (status_code != OK)              -> 100%
+#       (b) traces lentos (latência > 1000ms)                -> 100%
+#       (c) traces normais                                   -> 10% (probabilistic)
+#
+#   LOGS:
+#     - filtra logs de nível DEBUG/INFO (mantém WARN/ERROR/FATAL)
+#     - reduz drasticamente volume sem perder eventos críticos
+#
+#   MÉTRICAS:
+#     - mesma exportação do Env A (métricas são baratas e essenciais)
+#
+# OBJETIVO:
+#   Demonstrar redução de overhead (CPU collector, rede, volume de spans
+#   ingeridos pelo Jaeger) MANTENDO capacidade diagnóstica para erros
+#   e anomalias de latência.
+# =============================================================================
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+
+  prometheus/self:
+    config:
+      scrape_configs:
+        - job_name: 'otel-collector-self'
+          scrape_interval: 15s
+          static_configs:
+            - targets: ['localhost:8888']
+
+# -----------------------------------------------------------------------------
+# PROCESSORS - aqui mora a otimização
+# -----------------------------------------------------------------------------
+processors:
+
+  # ---------------------------------------------------------------------------
+  # 1) memory_limiter - guarda-chuva contra OOM (idêntico ao Env A)
+  # ---------------------------------------------------------------------------
+  memory_limiter:
+    check_interval: 2s
+    limit_mib: 400
+    spike_limit_mib: 100
+
+  # ---------------------------------------------------------------------------
+  # 2) resource - tag de ambiente B
+  # ---------------------------------------------------------------------------
+  resource:
+    attributes:
+      - key: experiment.env
+        value: "B"
+        action: upsert
+
+  # ---------------------------------------------------------------------------
+  # 3) tail_sampling - DECISÃO baseada no trace COMPLETO
+  #
+  # O tail_sampling acumula todos os spans de um trace por `decision_wait`
+  # e então aplica as políticas em ordem. A primeira política que decidir
+  # SAMPLE prevalece (drop só se nenhuma decidir sample).
+  #
+  # Políticas (ordem importa):
+  #   - errors_policy: qualquer trace com span de status ERROR -> mantém 100%
+  #   - slow_policy:   qualquer trace com latência > 1s -> mantém 100%
+  #   - probabilistic: 10% dos demais traces -> mantém
+  #
+  # Resultado esperado: ~10-15% dos traces totais armazenados no Jaeger,
+  # COM TODOS OS ERROS E ANOMALIAS PRESERVADOS.
+  # ---------------------------------------------------------------------------
+  tail_sampling:
+    decision_wait: 10s
+    num_traces: 50000
+    expected_new_traces_per_sec: 200
+    policies:
+      # Política 1: manter 100% dos traces que tiveram erro
+      - name: errors-policy
+        type: status_code
+        status_code:
+          status_codes: [ERROR]
+
+      # Política 2: manter 100% dos traces lentos (>1000ms = 1.000.000.000 ns)
+      - name: slow-policy
+        type: latency
+        latency:
+          threshold_ms: 1000
+
+      # Política 3: 10% probabilístico para o resto
+      - name: probabilistic-policy
+        type: probabilistic
+        probabilistic:
+          sampling_percentage: 10
+
+  # ---------------------------------------------------------------------------
+  # 4) filter/logs - drop de logs de nível DEBUG/INFO
+  #
+  # OTTL (OpenTelemetry Transformation Language) permite condições por sinal.
+  # Aqui descartamos qualquer log com severity_number < SEVERITY_NUMBER_WARN (13).
+  # Mantemos: WARN(13), ERROR(17), FATAL(21).
+  # ---------------------------------------------------------------------------
+  filter/logs:
+    error_mode: ignore
+    logs:
+      log_record:
+        - 'severity_number < SEVERITY_NUMBER_WARN'
+
+  # ---------------------------------------------------------------------------
+  # 5) filter/spans - drop de spans de health-check (defensivo)
+  # Apesar de excluirmos /health no SDK, alguns frameworks geram spans
+  # internos. Esta camada extra reduz mais ruído.
+  # ---------------------------------------------------------------------------
+  filter/spans:
+    error_mode: ignore
+    traces:
+      span:
+        - 'attributes["http.target"] == "/health"'
+        - 'attributes["http.target"] == "/metrics"'
+        - 'attributes["url.path"] == "/health"'
+        - 'attributes["url.path"] == "/metrics"'
+
+  # ---------------------------------------------------------------------------
+  # 6) batch - agrupamento (igual ao Env A)
+  # ---------------------------------------------------------------------------
+  batch:
+    send_batch_size: 1024
+    timeout: 5s
+    send_batch_max_size: 2048
+
+# -----------------------------------------------------------------------------
+# EXPORTERS
+# -----------------------------------------------------------------------------
+exporters:
+  otlp/jaeger:
+    endpoint: jaeger:4317
+    tls:
+      insecure: true
+
+  prometheus:
+    endpoint: 0.0.0.0:8889
+    namespace: otel
+    send_timestamps: true
+    metric_expiration: 5m
+    resource_to_telemetry_conversion:
+      enabled: true
+
+  # Logs com verbosity reduzida (queremos contar volume, não inundar disco)
+  debug:
+    verbosity: basic
+    sampling_initial: 5
+    sampling_thereafter: 200
+
+# -----------------------------------------------------------------------------
+# EXTENSIONS
+# -----------------------------------------------------------------------------
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+  zpages:
+    endpoint: 0.0.0.0:55679
+
+# -----------------------------------------------------------------------------
+# SERVICE
+# -----------------------------------------------------------------------------
+service:
+  extensions: [health_check, zpages]
+
+  telemetry:
+    metrics:
+      level: detailed
+      address: 0.0.0.0:8888
+    logs:
+      level: info
+
+  pipelines:
+    # Traces - filtragem de spans + tail_sampling + batch
+    # IMPORTANTE: tail_sampling DEVE vir ANTES do batch.
+    traces:
+      receivers:  [otlp]
+      processors: [memory_limiter, resource, filter/spans, tail_sampling, batch]
+      exporters:  [otlp/jaeger]
+
+    # Métricas - inalteradas (métricas são baratas e fundamentais)
+    metrics:
+      receivers:  [otlp, prometheus/self]
+      processors: [memory_limiter, resource, batch]
+      exporters:  [prometheus]
+
+    # Logs - filtragem por severity ANTES do batch
+    logs:
+      receivers:  [otlp]
+      processors: [memory_limiter, resource, filter/logs, batch]
+      exporters:  [debug]

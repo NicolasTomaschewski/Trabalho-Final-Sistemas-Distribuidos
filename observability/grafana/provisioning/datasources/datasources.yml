@@ -1,0 +1,28 @@
+# =============================================================================
+# Grafana datasources - provisionamento automático
+# =============================================================================
+# Aponta para o Prometheus local da rede Docker.
+# Cada ambiente (A/B) tem seu próprio Prometheus no mesmo host de serviço.
+# =============================================================================
+
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    editable: false
+    jsonData:
+      httpMethod: POST
+      timeInterval: '15s'
+
+  - name: Jaeger
+    type: jaeger
+    access: proxy
+    url: http://jaeger:16686
+    editable: false
+    jsonData:
+      tracesToMetrics:
+        datasourceUid: prometheus

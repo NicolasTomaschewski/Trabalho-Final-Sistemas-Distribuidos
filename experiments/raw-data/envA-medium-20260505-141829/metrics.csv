@@ -1,0 +1,13 @@
+timestamp,label,env,api_throughput_rps,api_error_rate,api_latency_p50_s,api_latency_p95_s,api_latency_p99_s,worker_tasks_ok,worker_tasks_err,worker_injected_total,worker_injected_error,worker_injected_slow,collector_cpu_cores,collector_mem_mb,collector_net_tx_bps,collector_net_rx_bps,spans_received_rps,spans_exported_rps,spans_dropped_rps,spans_refused_rps,logs_received_rps,logs_exported_rps,metrics_received_rps,metrics_exported_rps,api_cpu_cores,api_mem_mb,worker_cpu_cores,worker_mem_mb,jaeger_spans_received,jaeger_spans_saved
+2026-05-05T17:24:14.628278Z,post-load,A,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan
+2026-05-05T17:24:19.644331Z,post-load,A,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan
+2026-05-05T17:24:24.655255Z,post-load,A,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan
+2026-05-05T17:24:29.667464Z,post-load,A,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan
+2026-05-05T17:24:34.685890Z,post-load,A,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan
+2026-05-05T17:24:39.703422Z,post-load,A,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan
+2026-05-05T17:24:44.716873Z,post-load,A,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan
+2026-05-05T17:24:49.731846Z,post-load,A,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan
+2026-05-05T17:24:54.740002Z,post-load,A,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan
+2026-05-05T17:24:59.753020Z,post-load,A,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan
+2026-05-05T17:25:04.764722Z,post-load,A,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan
+2026-05-05T17:25:09.776332Z,post-load,A,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan,nan

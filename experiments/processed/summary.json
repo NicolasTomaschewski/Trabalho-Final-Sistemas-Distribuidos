@@ -1,0 +1,20 @@
+{
+  "diagnostic_rate": {
+    "A-medium": {
+      "injected_total": 0,
+      "detected_estimate": 0,
+      "spans_exported_total_est": 0,
+      "TD": null
+    },
+    "B-medium": {
+      "injected_total": 0,
+      "detected_estimate": 0,
+      "spans_exported_total_est": 0,
+      "TD": null
+    }
+  },
+  "n_runs": {
+    "A-medium": 0,
+    "B-medium": 0
+  }
+}

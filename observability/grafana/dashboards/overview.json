@@ -1,0 +1,268 @@
+{
+  "annotations": { "list": [] },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "type": "row",
+      "title": "APLICAÇÃO - API & Worker",
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0},
+      "id": 100,
+      "collapsed": false,
+      "panels": []
+    },
+    {
+      "type": "stat",
+      "title": "Throughput (req/s) - API",
+      "id": 1,
+      "gridPos": {"h": 4, "w": 6, "x": 0, "y": 1},
+      "targets": [
+        {
+          "expr": "sum(rate(api_requests_total[1m]))",
+          "legendFormat": "req/s",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps",
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null}
+            ]
+          }
+        }
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Latência p95 (s)",
+      "id": 2,
+      "gridPos": {"h": 4, "w": 6, "x": 6, "y": 1},
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(api_request_duration_seconds_bucket[1m])) by (le))",
+          "legendFormat": "p95",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "yellow", "value": 1},
+              {"color": "red", "value": 3}
+            ]
+          }
+        }
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Taxa de Erros",
+      "id": 3,
+      "gridPos": {"h": 4, "w": 6, "x": 12, "y": 1},
+      "targets": [
+        {
+          "expr": "sum(rate(api_requests_total{status=~\"5..\"}[1m])) / sum(rate(api_requests_total[1m]))",
+          "legendFormat": "error rate",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "green", "value": null},
+              {"color": "yellow", "value": 0.05},
+              {"color": "red", "value": 0.15}
+            ]
+          }
+        }
+      }
+    },
+    {
+      "type": "stat",
+      "title": "Falhas Injetadas (Worker)",
+      "id": 4,
+      "gridPos": {"h": 4, "w": 6, "x": 18, "y": 1},
+      "targets": [
+        {
+          "expr": "sum(increase(worker_injected_faults_total[1h]))",
+          "legendFormat": "total injected",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": {"mode": "thresholds"},
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{"color": "blue", "value": null}]
+          }
+        }
+      }
+    },
+
+    {
+      "type": "timeseries",
+      "title": "Latência API (p50/p95/p99)",
+      "id": 5,
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 5},
+      "targets": [
+        {"expr": "histogram_quantile(0.50, sum(rate(api_request_duration_seconds_bucket[1m])) by (le))", "legendFormat": "p50", "refId": "A"},
+        {"expr": "histogram_quantile(0.95, sum(rate(api_request_duration_seconds_bucket[1m])) by (le))", "legendFormat": "p95", "refId": "B"},
+        {"expr": "histogram_quantile(0.99, sum(rate(api_request_duration_seconds_bucket[1m])) by (le))", "legendFormat": "p99", "refId": "C"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "s"}}
+    },
+    {
+      "type": "timeseries",
+      "title": "Throughput por Endpoint",
+      "id": 6,
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 5},
+      "targets": [
+        {"expr": "sum by (endpoint) (rate(api_requests_total[1m]))", "legendFormat": "{{endpoint}}", "refId": "A"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "reqps"}}
+    },
+
+    {
+      "type": "row",
+      "title": "OBSERVABILIDADE - Overhead do Collector",
+      "id": 200,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 13},
+      "collapsed": false,
+      "panels": []
+    },
+
+    {
+      "type": "timeseries",
+      "title": "CPU usage do Collector (cores)",
+      "id": 7,
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 14},
+      "targets": [
+        {
+          "expr": "rate(container_cpu_usage_seconds_total{name=~\".*otel-collector.*\"}[1m])",
+          "legendFormat": "{{name}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {"defaults": {"unit": "percentunit"}}
+    },
+    {
+      "type": "timeseries",
+      "title": "Memória do Collector (MB)",
+      "id": 8,
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 14},
+      "targets": [
+        {
+          "expr": "container_memory_working_set_bytes{name=~\".*otel-collector.*\"} / (1024*1024)",
+          "legendFormat": "{{name}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {"defaults": {"unit": "decmbytes"}}
+    },
+
+    {
+      "type": "timeseries",
+      "title": "Spans recebidos vs exportados (taxa)",
+      "id": 9,
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 22},
+      "targets": [
+        {"expr": "rate(otelcol_receiver_accepted_spans[1m])", "legendFormat": "received", "refId": "A"},
+        {"expr": "rate(otelcol_exporter_sent_spans[1m])",     "legendFormat": "exported", "refId": "B"},
+        {"expr": "rate(otelcol_processor_dropped_spans[1m])", "legendFormat": "dropped",  "refId": "C"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "ops"}}
+    },
+    {
+      "type": "timeseries",
+      "title": "Logs recebidos vs exportados",
+      "id": 10,
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 22},
+      "targets": [
+        {"expr": "rate(otelcol_receiver_accepted_log_records[1m])", "legendFormat": "received", "refId": "A"},
+        {"expr": "rate(otelcol_exporter_sent_log_records[1m])",     "legendFormat": "exported", "refId": "B"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "ops"}}
+    },
+
+    {
+      "type": "row",
+      "title": "INFRAESTRUTURA - Containers",
+      "id": 300,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 30},
+      "collapsed": false,
+      "panels": []
+    },
+
+    {
+      "type": "timeseries",
+      "title": "CPU por Container (%)",
+      "id": 11,
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 31},
+      "targets": [
+        {
+          "expr": "rate(container_cpu_usage_seconds_total{name=~\"env-.*\"}[1m]) * 100",
+          "legendFormat": "{{name}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {"defaults": {"unit": "percent"}}
+    },
+    {
+      "type": "timeseries",
+      "title": "Memória por Container (MB)",
+      "id": 12,
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 31},
+      "targets": [
+        {
+          "expr": "container_memory_working_set_bytes{name=~\"env-.*\"} / (1024*1024)",
+          "legendFormat": "{{name}}",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {"defaults": {"unit": "decmbytes"}}
+    },
+
+    {
+      "type": "timeseries",
+      "title": "Tráfego de Rede do Collector (bytes/s)",
+      "id": 13,
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 39},
+      "targets": [
+        {"expr": "rate(container_network_transmit_bytes_total{name=~\".*otel-collector.*\"}[1m])", "legendFormat": "{{name}} TX", "refId": "A"},
+        {"expr": "rate(container_network_receive_bytes_total{name=~\".*otel-collector.*\"}[1m])",  "legendFormat": "{{name}} RX", "refId": "B"}
+      ],
+      "fieldConfig": {"defaults": {"unit": "Bps"}}
+    }
+  ],
+  "refresh": "10s",
+  "schemaVersion": 39,
+  "style": "dark",
+  "tags": ["observability", "overhead", "experiment"],
+  "templating": {"list": []},
+  "time": {"from": "now-15m", "to": "now"},
+  "timepicker": {},
+  "timezone": "browser",
+  "title": "Experimento Overhead - Visão Geral",
+  "uid": "overhead-overview",
+  "version": 1,
+  "weekStart": ""
+}

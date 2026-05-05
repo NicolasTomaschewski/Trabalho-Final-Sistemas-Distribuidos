@@ -1,0 +1,20 @@
+# =============================================================================
+# Grafana dashboards - provisionamento automático
+# =============================================================================
+# Carrega TODOS os dashboards da pasta /var/lib/grafana/dashboards
+# automaticamente ao subir o container.
+# =============================================================================
+
+apiVersion: 1
+
+providers:
+  - name: 'experiment-dashboards'
+    orgId: 1
+    folder: 'Experimento de Overhead'
+    type: file
+    disableDeletion: true
+    updateIntervalSeconds: 30
+    allowUiUpdates: true
+    options:
+      path: /var/lib/grafana/dashboards
+      foldersFromFilesStructure: false

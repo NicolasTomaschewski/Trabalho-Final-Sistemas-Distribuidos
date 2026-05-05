@@ -1,0 +1,238 @@
+# =============================================================================
+# DOCKER COMPOSE - AMBIENTE A (BASELINE TRADICIONAL)
+# =============================================================================
+# Sobe o stack completo do Ambiente A:
+#   - api          (Flask + OTel)
+#   - worker       (Flask + OTel)
+#   - otel-collector (config baseline, sem sampling)
+#   - jaeger       (UI :16686)
+#   - prometheus   (UI :9090)
+#   - grafana      (UI :3000)
+#   - cadvisor     (métricas de containers)
+#   - node-exporter (métricas do host)
+#   - k6           (executor de testes de carga, on-demand)
+#
+# Uso:
+#   docker compose -f env-A/docker-compose.yml up -d --build
+#   docker compose -f env-A/docker-compose.yml down -v
+# =============================================================================
+
+name: obs-overhead-env-a
+
+# Limites idênticos aplicados em ambos ambientes para fairness experimental
+x-resource-limits: &default-limits
+  deploy:
+    resources:
+      limits:
+        cpus: '1.0'
+        memory: 512M
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # API
+  # ---------------------------------------------------------------------------
+  api:
+    build:
+      context: ../base-system/api
+      dockerfile: Dockerfile
+    container_name: env-a-api
+    environment:
+      - ENV_LABEL=A
+      - OTEL_SERVICE_NAME=api-env-a
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - OTEL_EXPORTER_OTLP_PROTOCOL=grpc
+      - WORKER_URL=http://worker:8081
+      - LOG_LEVEL=INFO            # baseline = INFO completo
+      - PORT=8080
+    ports:
+      - "8080:8080"
+    depends_on:
+      otel-collector:
+        condition: service_started
+      worker:
+        condition: service_started
+    networks: [obs]
+    <<: *default-limits
+
+  # ---------------------------------------------------------------------------
+  # Worker
+  # ---------------------------------------------------------------------------
+  worker:
+    build:
+      context: ../base-system/worker
+      dockerfile: Dockerfile
+    container_name: env-a-worker
+    environment:
+      - ENV_LABEL=A
+      - OTEL_SERVICE_NAME=worker-env-a
+      - OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4317
+      - OTEL_EXPORTER_OTLP_PROTOCOL=grpc
+      - LOG_LEVEL=INFO
+      - PORT=8081
+      - FAULT_ERROR_RATE=0.05     # 5% de erros injetados
+      - FAULT_SLOW_RATE=0.03      # 3% de slow injetados
+      - SLOW_LATENCY_MS=2500
+    ports:
+      - "8081:8081"
+    depends_on:
+      otel-collector:
+        condition: service_started
+    networks: [obs]
+    <<: *default-limits
+
+  # ---------------------------------------------------------------------------
+  # OpenTelemetry Collector - configuração BASELINE
+  # ---------------------------------------------------------------------------
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.103.0
+    container_name: env-a-otel-collector
+    command: ["--config=/etc/otel-collector.yaml"]
+    volumes:
+      - ./otel/otel-collector.yaml:/etc/otel-collector.yaml:ro
+    ports:
+      - "4317:4317"   # OTLP gRPC
+      - "4318:4318"   # OTLP HTTP
+      - "8888:8888"   # Métricas internas do Collector
+      - "8889:8889"   # Métricas exportadas (Prometheus)
+      - "13133:13133" # Health check
+      - "55679:55679" # zpages
+    networks: [obs]
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+
+  # ---------------------------------------------------------------------------
+  # Jaeger - storage in-memory para experimento (não-persistente)
+  # ---------------------------------------------------------------------------
+  jaeger:
+    image: jaegertracing/all-in-one:1.57
+    container_name: env-a-jaeger
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+      - SPAN_STORAGE_TYPE=memory
+      - METRICS_STORAGE_TYPE=prometheus
+    ports:
+      - "16686:16686"  # Jaeger UI
+      - "14250:14250"  # gRPC interno
+      - "14268:14268"  # HTTP collector
+      # 4317 do Jaeger NÃO é exposto - vai apenas via rede interna
+    networks: [obs]
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
+
+  # ---------------------------------------------------------------------------
+  # Prometheus
+  # ---------------------------------------------------------------------------
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: env-a-prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--storage.tsdb.retention.time=2h'
+      - '--web.enable-lifecycle'
+    volumes:
+      - ../observability/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+    networks: [obs]
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 512M
+
+  # ---------------------------------------------------------------------------
+  # Grafana - dashboards pré-provisionados
+  # ---------------------------------------------------------------------------
+  grafana:
+    image: grafana/grafana:11.1.0
+    container_name: env-a-grafana
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+      - GF_AUTH_ANONYMOUS_ENABLED=true
+      - GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer
+    volumes:
+      - ../observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "3000:3000"
+    depends_on: [prometheus]
+    networks: [obs]
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
+  # ---------------------------------------------------------------------------
+  # cAdvisor - métricas detalhadas por container
+  # ---------------------------------------------------------------------------
+  cadvisor:
+    image: gcr.io/cadvisor/cadvisor:v0.49.1
+    container_name: env-a-cadvisor
+    privileged: true
+    volumes:
+      - /:/rootfs:ro
+      - /var/run:/var/run:ro
+      - /sys:/sys:ro
+      - /var/lib/docker:/var/lib/docker:ro
+      - /dev/disk:/dev/disk:ro
+    ports:
+      - "8088:8080"   # 8080 já é a API; uso 8088 externamente
+    networks: [obs]
+    deploy:
+      resources:
+        limits:
+          cpus: '0.5'
+          memory: 256M
+
+  # ---------------------------------------------------------------------------
+  # node-exporter - métricas do host Linux
+  # No Windows/Mac com Docker Desktop, mede a VM virtual do Docker.
+  # ---------------------------------------------------------------------------
+  node-exporter:
+    image: prom/node-exporter:v1.8.2
+    container_name: env-a-node-exporter
+    command:
+      - '--path.rootfs=/host'
+    volumes:
+      - /:/host:ro,rslave
+    ports:
+      - "9100:9100"
+    networks: [obs]
+    deploy:
+      resources:
+        limits:
+          cpus: '0.2'
+          memory: 128M
+
+  # ---------------------------------------------------------------------------
+  # k6 - executor de testes de carga
+  # NÃO sobe automaticamente. Use:
+  #   docker compose run --rm k6 run -e API_URL=http://api:8080 -e ENV_LABEL=A /scripts/medium.js
+  # ---------------------------------------------------------------------------
+  k6:
+    image: grafana/k6:0.51.0
+    container_name: env-a-k6
+    profiles: ["loadtest"]
+    volumes:
+      - ../base-system/load-tests:/scripts:ro
+      - ../experiments/raw-data:/results
+    networks: [obs]
+    environment:
+      - K6_OUT=experimental-prometheus-rw
+      - K6_PROMETHEUS_RW_SERVER_URL=http://prometheus:9090/api/v1/write
+
+networks:
+  obs:
+    driver: bridge
+    name: obs-env-a
