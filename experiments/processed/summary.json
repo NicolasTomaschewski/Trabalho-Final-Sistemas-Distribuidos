@@ -1,20 +1,20 @@
 {
   "diagnostic_rate": {
     "A-medium": {
-      "injected_total": 0,
-      "detected_estimate": 0,
-      "spans_exported_total_est": 0,
-      "TD": null
+      "injected_total": 3943.818861092936,
+      "detected_estimate": 2236.546960263203,
+      "spans_exported_total_est": 5768.709228020272,
+      "TD": 0.5671018469756486
     },
     "B-medium": {
-      "injected_total": 0,
-      "detected_estimate": 0,
-      "spans_exported_total_est": 0,
-      "TD": null
+      "injected_total": 3629.0648273711045,
+      "detected_estimate": 2074.8116586574374,
+      "spans_exported_total_est": 1625.9813446009528,
+      "TD": 0.571720748278953
     }
   },
   "n_runs": {
-    "A-medium": 0,
-    "B-medium": 0
+    "A-medium": 36,
+    "B-medium": 36
   }
 }

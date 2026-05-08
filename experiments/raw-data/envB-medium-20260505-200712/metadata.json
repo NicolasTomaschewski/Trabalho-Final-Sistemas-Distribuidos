@@ -1,0 +1,11 @@
+{
+  "run_id":         "envB-medium-20260505-200712",
+  "env":            "B",
+  "load_type":      "medium",
+  "timestamp":      "20260505-200712",
+  "api_url":        "http://localhost:8090",
+  "prom_url":       "http://localhost:9091",
+  "fault_error_rate": 0.05,
+  "fault_slow_rate":  0.03,
+  "compose_file":   "/home/nicolas/Documentos/Faculdade/Sistemas Distribuidos/Trabalho_Final/env-B/docker-compose.yml"
+}

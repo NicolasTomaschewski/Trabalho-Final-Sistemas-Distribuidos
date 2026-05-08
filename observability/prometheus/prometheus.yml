@@ -21,9 +21,6 @@ global:
   external_labels:
     monitor: 'observability-overhead-experiment'
 
-# Habilita receber métricas via remote_write do k6
-# (k6 envia para Prometheus durante os testes de carga)
-remote_write_configs:
 
 scrape_configs:
 

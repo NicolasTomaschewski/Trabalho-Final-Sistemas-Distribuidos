@@ -1,0 +1,7 @@
+timestamp,label,env,api_throughput_rps,api_error_rate,api_latency_p50_s,api_latency_p95_s,api_latency_p99_s,worker_tasks_ok,worker_tasks_err,worker_injected_total,worker_injected_error,worker_injected_slow,collector_cpu_cores,collector_mem_mb,collector_net_tx_bps,collector_net_rx_bps,spans_received_rps,spans_exported_rps,spans_dropped_rps,spans_refused_rps,logs_received_rps,logs_exported_rps,metrics_received_rps,metrics_exported_rps,api_cpu_cores,api_mem_mb,worker_cpu_cores,worker_mem_mb,jaeger_spans_received,jaeger_spans_saved
+2026-05-05T22:38:30.656232Z,baseline,A,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0
+2026-05-05T22:38:35.687203Z,baseline,A,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0
+2026-05-05T22:38:40.718397Z,baseline,A,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0
+2026-05-05T22:38:45.750652Z,baseline,A,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0
+2026-05-05T22:38:50.778812Z,baseline,A,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0
+2026-05-05T22:38:55.808323Z,baseline,A,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,0.0,1.0996280985612898,1.0996836615252406,0.0,0.0,0.0,0.0,0.0,0.0
