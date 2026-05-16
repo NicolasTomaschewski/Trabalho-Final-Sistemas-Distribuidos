@@ -31,6 +31,11 @@ from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
 
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
 from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
+from opentelemetry.exporter.otlp.proto.grpc._log_exporter import OTLPLogExporter
+
+from opentelemetry._logs import set_logger_provider
+from opentelemetry.sdk._logs import LoggerProvider
+from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
 
 from opentelemetry.instrumentation.flask import FlaskInstrumentor
 from opentelemetry.instrumentation.requests import RequestsInstrumentor
@@ -82,9 +87,15 @@ def setup_telemetry(service_name: str, service_version: str = "1.0.0") -> None:
     )
     metrics.set_meter_provider(meter_provider)
 
-    # ----- Integração de logs com traces -------------------------------------
-    # Adiciona %(otelTraceID)s e %(otelSpanID)s ao LogRecord para correlação
-    # log -> trace no Jaeger/Grafana.
+    # ----- Logs (OTLP) -------------------------------------------------------
+    # Exporta log records para o Collector via OTLP/gRPC.
+    # LoggingInstrumentor faz a ponte do logging Python para o LoggerProvider,
+    # adicionando também trace_id/span_id para correlação log -> trace.
+    logger_provider = LoggerProvider(resource=resource)
+    logger_provider.add_log_record_processor(
+        BatchLogRecordProcessor(OTLPLogExporter(endpoint=endpoint, insecure=True))
+    )
+    set_logger_provider(logger_provider)
     LoggingInstrumentor().instrument(set_logging_format=False)
 
 

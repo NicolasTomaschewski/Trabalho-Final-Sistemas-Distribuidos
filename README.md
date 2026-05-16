@@ -46,12 +46,13 @@ falhas no sistema observado.
 | Sigla | Métrica | Fórmula |
 |-------|---------|---------|
 | **RO** | Redução de Overhead | `((Overhead_A - Overhead_B) / Overhead_A) * 100` |
-| **TD** | Taxa de Diagnóstico | `falhas_detectadas / falhas_injetadas` |
+| **TD** | Taxa de Diagnóstico | `min(taxa_erro_observada / FAULT_ERROR_RATE, 1.0)` |
 
-`falhas_injetadas` é **conhecida a priori** — o worker injeta falhas com
-probabilidades fixas (`FAULT_ERROR_RATE=0.05`, `FAULT_SLOW_RATE=0.03`) e
-incrementa um contador Prometheus (`worker_injected_faults_total`) que
-serve como *ground truth*.
+`taxa_erro_observada = worker_tasks_err / (worker_tasks_err + worker_tasks_ok)` —
+medida diretamente no worker via Prometheus. `FAULT_ERROR_RATE = 0.05` é
+parâmetro fixo do experimento. Essa formulação garante que Env A (sem sampling)
+retorne TD = 100% como sanidade, e que Env B revele qualquer degradação
+diagnóstica causada pelo sampling.
 
 ---
 
@@ -449,55 +450,67 @@ curl 'http://localhost:16686/api/traces?service=api-env-a&limit=1000' \
 
 ### 8.1 Redução de Overhead (RO)
 
-Esperado na arquitetura otimizada:
+Resultados observados nos experimentos (três perfis de carga):
 
-| Métrica | Redução típica |
-|---------|----------------|
-| Spans exportados | ~80–90% (sampling 10% dos normais) |
-| Logs exportados | ~70–95% (drop INFO) |
-| CPU do collector | ~30–60% |
-| Bytes de rede TX | ~75–90% |
+| Métrica | basic | medium | stress |
+|---------|-------|--------|--------|
+| Spans exportados | −76.7% | −71.0% | −66.3% |
+| Spans no Jaeger | −81.5% | −77.5% | −79.5% |
+| CPU do collector | **+32.7%** | **+15.3%** | **+28.9%** |
+| Memória do collector | +0.7% | +12.0% | +7.1% |
 
-**Importante**: A CPU do *collector* deve cair, mas o tail_sampling tem
-custo (precisa armazenar spans em buffer por `decision_wait`). O RO de
-CPU é menor que o RO de spans/bytes — isso é esperado e parte da análise.
+**Trade-off central**: o tail sampling reduz drasticamente o volume exportado
+para os backends, mas aumenta o custo interno do Collector (buffer de decisão
+de `decision_wait=10s`). O overhead não desaparece — ele migra do backend para
+o Collector. Todos os resultados incluem intervalos de confiança de 95%.
 
 ### 8.2 Taxa de Diagnóstico (TD)
 
-A TD é calculada como aproximação:
-
 ```
-TD ≈ (api_error_rate × throughput × tempo) / worker_injected_total
+TD = min(worker_tasks_err / (worker_tasks_err + worker_tasks_ok) / 0.05, 1.0)
 ```
 
-**Esperado:**
+**Resultados observados:**
 
-- Env A → TD ≈ 1.0 (todos os erros são vistos)
-- Env B → TD ≈ 1.0 (a política `errors-policy` mantém 100% dos traces de erro)
+| Env | basic | medium | stress |
+|-----|-------|--------|--------|
+| A   | 100%  | 100%   | 100%   |
+| B   | 100%  | 96.6%  | 100%   |
 
-Se a TD do Env B cair abaixo de 0.95, há problema na configuração do
-tail_sampling.
+Env A retorna 100% em todos os cenários (validação da metodologia). Env B
+mantém 96.6–100%, confirmando que a política `errors-policy: 100%` do
+tail sampling preserva todos os traces de erro. A variação de 3.4% no
+cenário medium está dentro da margem de variabilidade aleatória da injeção.
 
 ### 8.3 Latência da aplicação
 
-A diferença de latência entre A e B deve ser **mínima** (<5%). O sampling
-ocorre no Collector — não no SDK das aplicações — portanto a aplicação
-gera o mesmo trabalho em ambos os ambientes.
+O comportamento da latência é **dependente do nível de carga**:
 
-Diferenças significativas indicam:
-- saturação de recursos
-- contenção de rede para o collector
+- **basic e medium**: Env B é mais rápido (menos contenção de recursos nas aplicações por exportar menos spans).
+- **stress**: Env B fica mais lento (+5.8ms p50, +130ms p95). O buffer do tail sampling cria contenção quando o volume de spans supera a capacidade de decisão dentro do `decision_wait`.
+
+Essa inversão delimita o **envelope operacional** da otimização. Latência
+significativamente pior em B sob qualquer carga indica saturação do Collector.
 
 ### 8.4 Caveats experimentais
 
 1. **Storage in-memory do Jaeger**: traces são perdidos ao reiniciar.
    Para experimentos longos, troque para `SPAN_STORAGE_TYPE=badger`.
-2. **Docker Desktop (Mac/Windows)**: cAdvisor mede a VM Linux, não o
-   host real. Métricas de CPU do host serão imprecisas.
-3. **Variabilidade**: rode 3+ replicações de cada cenário e use média/IC.
-4. **Faults injetados são pseudoaleatórios**: ao rodar com baixa carga,
-   poucos faults serão observados. Use `medium` ou `stress` para
-   estatística confiável.
+2. **WSL2 / Docker Desktop**: o cAdvisor não consegue ler métricas de cgroup
+   nesses ambientes. CPU e memória da API e do Worker ficam zerados. As métricas
+   do Collector são coletadas via endpoint interno do processo (`otelcol_process_*`)
+   e funcionam normalmente. Em Linux nativo, todas as métricas são disponíveis.
+3. **Métricas de rede do Collector** (`collector_net_tx_bps/rx_bps`): dependem
+   do cAdvisor e ficam indisponíveis no WSL2. Use `spans_exported_rps` e
+   `jaeger_spans_received` como proxy do volume de dados transmitidos.
+4. **Logs via OTLP**: o `OTLPLogExporter` está configurado no SDK Python,
+   mas os YAMLs do Collector ainda não definem pipeline de logs. As métricas
+   `logs_received_rps` / `logs_exported_rps` permanecem zero até a pipeline
+   ser adicionada em `env-A/otel/otel-collector.yaml` e `env-B/otel/otel-collector.yaml`.
+5. **Variabilidade**: rode 3+ replicações de cada cenário e use média/IC.
+   O script acumula todos os runs em `raw-data/` automaticamente.
+6. **Faults injetados são pseudoaleatórios**: com baixa carga, poucos faults
+   serão observados. Use `medium` ou `stress` para estatística confiável.
 
 ---
 

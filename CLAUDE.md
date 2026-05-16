@@ -128,11 +128,19 @@ k6 load test → API → Worker → OTel Collector → Jaeger (traces) + Prometh
 
 | Category | Metrics |
 |---|---|
-| Collector overhead | CPU cores, memory bytes, network TX/RX bytes/s, spans/logs received/exported/dropped |
+| Collector overhead | CPU (`otelcol_process_cpu_seconds`), memory (`otelcol_process_memory_rss`), spans/logs received/exported/dropped |
 | Application | API error rate, throughput (req/s), latency p50/p95/p99 |
-| Diagnostic | Worker fault count (ground truth), traces with errors preserved |
+| Diagnostic | `worker_tasks_err / (worker_tasks_err + worker_tasks_ok)` vs `FAULT_ERROR_RATE=0.05` |
+
+**Note:** `container_cpu_usage_seconds_total` and `container_memory_working_set_bytes` (cAdvisor) return zero on WSL2. Collector metrics are collected via its internal process endpoint (`:8888`) instead. Network metrics (`collector_net_tx_bps/rx_bps`) remain unavailable on WSL2.
 
 ## Dependencies
+
+**Key findings (experiments run May 2026):**
+- Span export reduction: −76.7% (basic), −71.0% (medium), −66.3% (stress) — all exceed >50% target
+- Collector CPU: Env B uses **more** CPU (+15–33%) due to tail sampling buffer overhead
+- Diagnostic rate: A=100%, B=96.6–100% — error-trace preservation policy works
+- Latency inversion: Env B is faster under basic/medium but **slower under stress** — defines the operational envelope
 
 **Python** (Flask services): `flask==3.0.3`, `opentelemetry-api/sdk==1.27.0`, `opentelemetry-exporter-otlp-proto-grpc==1.27.0`, `opentelemetry-instrumentation-flask==0.48b0`, `prometheus-client==0.20.0`, `gunicorn==22.0.0`
 

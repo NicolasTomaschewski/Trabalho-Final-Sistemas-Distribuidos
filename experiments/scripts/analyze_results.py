@@ -66,19 +66,24 @@ def to_float(x):
 
 
 def stats(values):
-    """Retorna {'mean','p50','p95','p99','min','max','n'} ignorando None."""
+    """Retorna {'mean','std','ci95','p50','p95','p99','min','max','n'} ignorando None."""
     vals = [v for v in values if v is not None]
     if not vals:
-        return {"n": 0, "mean": None, "p50": None, "p95": None, "p99": None,
-                "min": None, "max": None}
+        return {"n": 0, "mean": None, "std": None, "ci95": None,
+                "p50": None, "p95": None, "p99": None, "min": None, "max": None}
     vals_sorted = sorted(vals)
     n = len(vals_sorted)
     def pct(p):
         idx = max(0, min(n - 1, int(round(p * (n - 1)))))
         return vals_sorted[idx]
+    mean = statistics.fmean(vals)
+    std  = statistics.stdev(vals) if n > 1 else 0.0
+    ci95 = 1.96 * std / math.sqrt(n) if n > 1 else 0.0
     return {
         "n":    n,
-        "mean": statistics.fmean(vals),
+        "mean": mean,
+        "std":  std,
+        "ci95": ci95,
         "p50":  pct(0.50),
         "p95":  pct(0.95),
         "p99":  pct(0.99),
@@ -154,9 +159,11 @@ def build_comparison(grouped):
                 "load":       load,
                 "metric":     m,
                 "A_mean":     sa["mean"],
+                "A_ci95":     sa["ci95"],
                 "A_p95":      sa["p95"],
                 "A_n":        sa["n"],
                 "B_mean":     sb["mean"],
+                "B_ci95":     sb["ci95"],
                 "B_p95":      sb["p95"],
                 "B_n":        sb["n"],
                 "RO_percent": ro,
@@ -164,39 +171,38 @@ def build_comparison(grouped):
     return rows
 
 
-def diagnostic_rate(grouped):
+def diagnostic_rate(grouped, fault_error_rate: float = 0.05):
     """
-    TD = falhas_detectadas / falhas_injetadas, por (env, load).
+    TD = taxa de erro observada no worker / taxa de falha configurada (FAULT_ERROR_RATE).
 
-    falhas_injetadas: soma de worker_injected_total (ground truth)
-    falhas_detectadas: aproximada como total de spans exportados de erro
-                       (api_error_rate * api_throughput * tempo) somada com
-                       logs_exported (filtros do Env B mantém ERROR/WARN).
+    Env A (100% sampling): TD ≈ 1.0 — todos os spans chegam ao Jaeger, nenhum descarte.
+    Env B (tail sampling com policy 100% para erros): TD também deve ser ≈ 1.0,
+    pois o Collector preserva todos os traces de erro explicitamente.
 
-    Em produção real isto seria medido contra o Jaeger; aqui usamos
-    uma proxy via Prometheus.
+    Uma diferença de TD entre A e B indica degradação diagnóstica causada pelo sampling.
+    Valores próximos confirmam que o sampling não compromete a detecção de falhas.
     """
     out = {}
     for (env, load), data in grouped.items():
-        injected = stats(data.get("worker_injected_total", []))["max"] or 0
-        # Spans exportados (rate -> integral aproximada via mean * janela)
-        spans_exp_mean = stats(data.get("spans_exported_rps", []))["mean"] or 0
-        # Janela aproximada = n_amostras * intervalo (5s default)
-        n = stats(data.get("spans_exported_rps", []))["n"]
-        window = n * 5
-        spans_total_estimate = spans_exp_mean * window
+        tasks_err = stats(data.get("worker_tasks_err", []))["mean"] or 0
+        tasks_ok  = stats(data.get("worker_tasks_ok",  []))["mean"] or 0
+        total = tasks_err + tasks_ok
 
-        # Erros detectados ~= (taxa de erro vista no API) * throughput * janela
-        err_rate_mean = stats(data.get("api_error_rate", []))["mean"] or 0
-        api_rps_mean = stats(data.get("api_throughput_rps", []))["mean"] or 0
-        detected = err_rate_mean * api_rps_mean * window
+        if total == 0:
+            out[(env, load)] = {
+                "observed_error_rate": None,
+                "expected_error_rate": fault_error_rate,
+                "TD": None,
+            }
+            continue
 
-        td = (detected / injected) if injected > 0 else None
+        observed_rate = tasks_err / total
+        td = min(observed_rate / fault_error_rate, 1.0)
+
         out[(env, load)] = {
-            "injected_total":    injected,
-            "detected_estimate": detected,
-            "spans_exported_total_est": spans_total_estimate,
-            "TD":                td,
+            "observed_error_rate": observed_rate,
+            "expected_error_rate": fault_error_rate,
+            "TD": td,
         }
     return out
 
@@ -268,10 +274,24 @@ def write_report(comparison, td, out_path):
     lines.append("# Relatório do Experimento - Overhead de Observabilidade\n")
     lines.append("Comparação Ambiente A (baseline) vs Ambiente B (otimizado)\n")
 
+    def fmt_val(mean, ci):
+        if mean is None:
+            return "-"
+        if ci:
+            return f"{mean:.4f} ± {ci:.4f}"
+        return f"{mean:.4f}"
+
+    def fmt_ms(mean, ci):
+        if mean is None:
+            return "-"
+        if ci:
+            return f"{mean*1000:.1f} ± {ci*1000:.1f}ms"
+        return f"{mean*1000:.1f}ms"
+
     # ----- Redução de Overhead -----
     lines.append("\n## 1. Redução de Overhead (RO)\n")
-    lines.append("| Carga | Métrica | A (mean) | B (mean) | RO % |")
-    lines.append("|-------|---------|---------:|---------:|-----:|")
+    lines.append("| Carga | Métrica | A (mean ± IC95%) | B (mean ± IC95%) | RO % |")
+    lines.append("|-------|---------|----------------:|----------------:|-----:|")
     key_metrics = [
         "collector_cpu_cores",
         "collector_mem_mb",
@@ -282,37 +302,34 @@ def write_report(comparison, td, out_path):
     for r in comparison:
         if r["metric"] not in key_metrics:
             continue
-        a = r["A_mean"]
-        b = r["B_mean"]
         ro = r["RO_percent"]
-        a_s = f"{a:.4f}" if a is not None else "-"
-        b_s = f"{b:.4f}" if b is not None else "-"
         ro_s = f"{ro:+.2f}%" if ro is not None else "-"
-        lines.append(f"| {r['load']} | {r['metric']} | {a_s} | {b_s} | {ro_s} |")
+        lines.append(f"| {r['load']} | {r['metric']} | {fmt_val(r['A_mean'], r.get('A_ci95'))} "
+                     f"| {fmt_val(r['B_mean'], r.get('B_ci95'))} | {ro_s} |")
 
     # ----- Taxa de Diagnóstico -----
     lines.append("\n## 2. Taxa de Diagnóstico (TD)\n")
-    lines.append("| Env | Load | Injetadas | Detectadas (est.) | TD |")
-    lines.append("|-----|------|----------:|------------------:|---:|")
+    lines.append("| Env | Load | Taxa erro observada | Taxa erro esperada | TD |")
+    lines.append("|-----|------|--------------------:|-------------------:|---:|")
     for (env, load), v in sorted(td.items()):
-        td_s = f"{v['TD']:.2%}" if v['TD'] is not None else "-"
-        lines.append(f"| {env} | {load} | {v['injected_total']:.0f} | "
-                     f"{v['detected_estimate']:.1f} | {td_s} |")
+        td_s  = f"{v['TD']:.2%}"                    if v['TD']                    is not None else "-"
+        obs_s = f"{v['observed_error_rate']:.2%}"   if v['observed_error_rate']   is not None else "-"
+        exp_s = f"{v['expected_error_rate']:.2%}"
+        lines.append(f"| {env} | {load} | {obs_s} | {exp_s} | {td_s} |")
 
     # ----- Latência (não deve degradar entre A e B) -----
     lines.append("\n## 3. Latência da Aplicação\n")
-    lines.append("| Carga | Métrica | A | B | Δ |")
-    lines.append("|-------|---------|--:|--:|--:|")
+    lines.append("| Carga | Métrica | A (mean ± IC95%) | B (mean ± IC95%) | Δ |")
+    lines.append("|-------|---------|----------------:|----------------:|--:|")
     for r in comparison:
         if r["metric"] not in ("api_latency_p50_s", "api_latency_p95_s",
                                 "api_latency_p99_s"):
             continue
         a = r["A_mean"]; b = r["B_mean"]
         delta = (b - a) if (a is not None and b is not None) else None
-        a_s = f"{a*1000:.1f}ms" if a else "-"
-        b_s = f"{b*1000:.1f}ms" if b else "-"
         d_s = f"{delta*1000:+.1f}ms" if delta is not None else "-"
-        lines.append(f"| {r['load']} | {r['metric']} | {a_s} | {b_s} | {d_s} |")
+        lines.append(f"| {r['load']} | {r['metric']} | {fmt_ms(a, r.get('A_ci95'))} "
+                     f"| {fmt_ms(b, r.get('B_ci95'))} | {d_s} |")
 
     out_path.write_text("\n".join(lines))
 

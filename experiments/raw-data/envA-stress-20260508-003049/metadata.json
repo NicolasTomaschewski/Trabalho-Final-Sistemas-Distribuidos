@@ -1,0 +1,11 @@
+{
+  "run_id":         "envA-stress-20260508-003049",
+  "env":            "A",
+  "load_type":      "stress",
+  "timestamp":      "20260508-003049",
+  "api_url":        "http://localhost:8080",
+  "prom_url":       "http://localhost:9090",
+  "fault_error_rate": 0.05,
+  "fault_slow_rate":  0.03,
+  "compose_file":   "/home/nicolas/Documentos/Faculdade/Sistemas Distribuidos/Trabalho_Final/env-A/docker-compose.yml"
+}

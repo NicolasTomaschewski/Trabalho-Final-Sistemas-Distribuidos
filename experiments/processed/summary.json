@@ -1,20 +1,42 @@
 {
   "diagnostic_rate": {
+    "A-basic": {
+      "observed_error_rate": 0.05417724649615937,
+      "expected_error_rate": 0.05,
+      "TD": 1.0
+    },
     "A-medium": {
-      "injected_total": 3943.818861092936,
-      "detected_estimate": 2236.546960263203,
-      "spans_exported_total_est": 5768.709228020272,
-      "TD": 0.5671018469756486
+      "observed_error_rate": 0.05172683801221037,
+      "expected_error_rate": 0.05,
+      "TD": 1.0
+    },
+    "A-stress": {
+      "observed_error_rate": 0.05075707119817275,
+      "expected_error_rate": 0.05,
+      "TD": 1.0
+    },
+    "B-basic": {
+      "observed_error_rate": 0.05288471311411069,
+      "expected_error_rate": 0.05,
+      "TD": 1.0
     },
     "B-medium": {
-      "injected_total": 3629.0648273711045,
-      "detected_estimate": 2074.8116586574374,
-      "spans_exported_total_est": 1625.9813446009528,
-      "TD": 0.571720748278953
+      "observed_error_rate": 0.04828643765400076,
+      "expected_error_rate": 0.05,
+      "TD": 0.9657287530800152
+    },
+    "B-stress": {
+      "observed_error_rate": 0.05219953393484894,
+      "expected_error_rate": 0.05,
+      "TD": 1.0
     }
   },
   "n_runs": {
-    "A-medium": 36,
-    "B-medium": 36
+    "A-basic": 12,
+    "A-medium": 72,
+    "A-stress": 12,
+    "B-basic": 12,
+    "B-medium": 72,
+    "B-stress": 12
   }
 }

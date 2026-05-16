@@ -49,8 +49,8 @@ QUERIES = {
     "worker_injected_slow":      'sum(increase(worker_injected_faults_total{fault_type="slow"}[5m]))',
 
     # ----- Collector (OVERHEAD - métricas-chave do artigo) -----------------
-    "collector_cpu_cores":       'sum(rate(container_cpu_usage_seconds_total{name=~".*otel-collector.*"}[1m]))',
-    "collector_mem_mb":          'sum(container_memory_working_set_bytes{name=~".*otel-collector.*"}) / (1024*1024)',
+    "collector_cpu_cores":       'rate(otelcol_process_cpu_seconds{job="otel-collector-internal"}[1m])',
+    "collector_mem_mb":          'otelcol_process_memory_rss{job="otel-collector-internal"} / (1024*1024)',
     "collector_net_tx_bps":      'sum(rate(container_network_transmit_bytes_total{name=~".*otel-collector.*"}[1m]))',
     "collector_net_rx_bps":      'sum(rate(container_network_receive_bytes_total{name=~".*otel-collector.*"}[1m]))',
 
